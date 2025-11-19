@@ -1,0 +1,135 @@
+name: Deploy Preview
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+# Ensure only one workflow runs at a time per PR
+concurrency:
+  group: "pre-${{ github.event.pull_request.number }}"
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    uses: ./.github/workflows/validate.yaml
+
+  deploy-preview:
+    needs: validate
+    if: ${{ github.event.action != 'closed' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
+      - name: Create .pre.vars file
+        run: |
+          echo "BEARER_TOKEN_PRIMARY=${{ secrets.BEARER_TOKEN_PRIMARY_PRE }}" >> .pre.vars
+          echo "BEARER_TOKEN_SECONDARY=${{ secrets.BEARER_TOKEN_SECONDARY_PRE }}" >> .pre.vars
+          echo "NOTION_TOKEN=${{ secrets.NOTION_TOKEN }}" >> .pre.vars
+          echo "SLACK_TOKEN=${{ secrets.SLACK_TOKEN }}" >> .pre.vars
+
+      - name: Deploy Preview
+        id: deploy
+        run: |
+          echo "Deploying preview for PR #${{ github.event.pull_request.number }}"
+          pnpm tsx --env-file=.pre.vars infra/cli.ts --stage "pre-${{ github.event.pull_request.number }}" --phase up
+          echo "website_url=https://ai-pre-${{ github.event.pull_request.number }}.cs.consensys.net" >> $GITHUB_OUTPUT
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SECRET_ALCHEMY_PASSPHRASE: ${{ secrets.SECRET_ALCHEMY_PASSPHRASE }}
+          ALCHEMY_STATE_TOKEN: ${{ secrets.ALCHEMY_STATE_TOKEN }}
+
+      - name: Find existing comment
+        id: find-comment
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: "github-actions[bot]"
+          body-includes: "<!-- infra-preview -->"
+
+      - name: Create or update PR comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            <!-- infra-preview -->
+            ## 🚀 Preview Deployed
+            Your preview is ready! 
+            **Preview URL:** ${{ steps.deploy.outputs.website_url }}
+            This preview was built from commit ${{ github.event.pull_request.head.sha }}
+            ---
+            <sub>🤖 This comment will be updated automatically when you push new commits to this PR.</sub>
+          edit-mode: replace
+
+  cleanup-preview:
+    if: ${{ github.event.action == 'closed' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
+      - name: Create .pre.vars file
+        run: |
+          echo "BEARER_TOKEN_PRIMARY=${{ secrets.BEARER_TOKEN_PRIMARY_PRE }}" >> .pre.vars
+          echo "BEARER_TOKEN_SECONDARY=${{ secrets.BEARER_TOKEN_SECONDARY_PRE }}" >> .pre.vars
+          echo "NOTION_TOKEN=${{ secrets.NOTION_TOKEN }}" >> .pre.vars
+          echo "SLACK_TOKEN=${{ secrets.SLACK_TOKEN }}" >> .pre.vars
+
+      - name: Cleanup Preview
+        run: |
+          echo "Cleaning up preview for PR #${{ github.event.pull_request.number }}"
+          pnpm tsx --env-file=.pre.vars infra/cli.ts --stage "pre-${{ github.event.pull_request.number }}" --phase destroy
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SECRET_ALCHEMY_PASSPHRASE: ${{ secrets.SECRET_ALCHEMY_PASSPHRASE }}
+          ALCHEMY_STATE_TOKEN: ${{ secrets.ALCHEMY_STATE_TOKEN }}
+
+      - name: Find existing comment
+        id: find-comment
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: "github-actions[bot]"
+          body-includes: "<!-- infra-preview -->"
+
+      - name: Update comment with cleanup status
+        if: steps.find-comment.outputs.comment-id != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          body: |
+            <!-- infra-preview -->
+            ## 🧹 Preview Cleaned Up
+            The preview for this PR has been cleaned up as the PR was closed.
+            ---
+            <sub>🤖 Preview resources have been removed from Cloudflare.</sub>
+          edit-mode: replace

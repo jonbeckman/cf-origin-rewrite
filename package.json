@@ -1,0 +1,35 @@
+{
+  "name": "cf-origin-rewrite",
+  "description": "Rewrite requests from a vanity domain to a different, origin domain while preserving the path and query parameters",
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@10.12.4",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "tsx --watch infra/cli.ts --dev",
+    "deploy:pre": "tsx infra/cli.ts --stage pre",
+    "deploy:prod": "tsx infra/cli.ts --stage prod",
+    "format": "biome check . --write",
+    "generate:openapi": "concurrently --passthrough-arguments --kill-others --kill-signal SIGKILL --success command-1 \"pnpm dev {@}\" \"wait-on -t 10s http://localhost:1337/openapi.json && curl http://localhost:1337/openapi.json | json > openapi.json && echo 'OpenAPI generated'\""
+  },
+  "dependencies": {
+    "@effect/cli": "^0.72.1",
+    "@effect/platform-node": "^0.100.0",
+    "cloudflare": "^5.2.0",
+    "dotenv": "^17.2.3",
+    "effect": "^3.19.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.5",
+    "@cloudflare/workers-types": "^4.20251113.0",
+    "@types/node": "^24.10.1",
+    "alchemy": "^0.77.5",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "wait-on": "9.0.3",
+    "wrangler": "^4.48.0"
+  }
+}

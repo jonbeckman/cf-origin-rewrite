@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    uses: ./.github/workflows/validate.yaml
+
+  release:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
+      - name: Create .prod.vars file
+        run: |
+          echo "BEARER_TOKEN_PRIMARY=${{ secrets.BEARER_TOKEN_PRIMARY }}" >> .prod.vars
+          echo "BEARER_TOKEN_SECONDARY=${{ secrets.BEARER_TOKEN_SECONDARY }}" >> .prod.vars
+          echo "NOTION_TOKEN=${{ secrets.NOTION_TOKEN }}" >> .prod.vars
+          echo "SLACK_TOKEN=${{ secrets.SLACK_TOKEN }}" >> .prod.vars
+
+      - name: Release to Production
+        run: |
+          echo "Releasing to production from main"
+          pnpm deploy:prod
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SECRET_ALCHEMY_PASSPHRASE: ${{ secrets.SECRET_ALCHEMY_PASSPHRASE }}
+          ALCHEMY_STATE_TOKEN: ${{ secrets.ALCHEMY_STATE_TOKEN }}
